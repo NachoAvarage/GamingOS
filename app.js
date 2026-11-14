@@ -1,897 +1,629 @@
 
-(() => {
-    "use strict";
-
-    const $ = (selector, root = document) =>
-        root.querySelector(selector);
-
-    const $$ = (selector, root = document) =>
-        [...root.querySelectorAll(selector)];
-
-    const layer = $("#windowLayer");
-    const startMenu = $("#startMenu");
-    const taskApps = $("#taskApps");
-
-    const apps = {
-        browser: {
-            name: "Browser",
-            icon: "◎",
-            color: "browser-icon"
-        },
-        games: {
-            name: "Game Library",
-            icon: "🎮",
-            color: "games-icon"
-        },
-        files: {
-            name: "My Files",
-            icon: "📁",
-            color: "files-icon"
-        },
-        settings: {
-            name: "Settings",
-            icon: "⚙",
-            color: "settings-icon"
-        },
-        calculator: {
-            name: "Calculator",
-            icon: "＋",
-            color: "calculator-icon"
-        },
-        terminal: {
-            name: "Terminal",
-            icon: ">_",
-            color: "terminal-icon"
-        },
-        notes: {
-            name: "Notes",
-            icon: "✎",
-            color: "files-icon"
-        }
-    };
-
-    let windows = {};
-    let activeWindow = null;
-    let zIndex = 10;
-    let toastTimer;
-
-    /* UTILITIES */
-
-    function notify(message) {
-        const toast = $("#toast");
-
-        toast.textContent = message;
-        toast.classList.remove("hidden");
-
-        clearTimeout(toastTimer);
-
-        toastTimer = setTimeout(() => {
-            toast.classList.add("hidden");
-        }, 2600);
-    }
-
-    function escapeHTML(value) {
-        return String(value).replace(/[&<>"']/g, char => ({
-            "&": "&amp;",
-            "<": "&lt;",
-            ">": "&gt;",
-            '"': "&quot;",
-            "'": "&#39;"
-        })[char]);
-    }
-
-    /* WINDOW MANAGEMENT */
-
-    function openApp(id) {
-        if (!apps[id]) return;
-
-        startMenu.classList.add("hidden");
-
-        if (windows[id]) {
-            focusWindow(id);
-            return;
-        }
-
-        const app = apps[id];
-        const win = document.createElement("section");
-
-        win.className = "window";
-        win.dataset.app = id;
-        win.style.zIndex = ++zIndex;
-
-        win.innerHTML = `
-            <div class="window-header">
-                <div class="window-title">
-                    <span class="tiny-icon ${app.color}">
-                        ${app.icon}
-                    </span>
-                    ${app.name}
-                </div>
-
-                <div class="window-controls">
-                    <button data-action="min" title="Minimize">−</button>
-                    <button data-action="max" title="Maximize">□</button>
-                    <button data-action="close" class="close" title="Close">×</button>
-                </div>
-            </div>
-
-            <div class="window-body">
-                ${renderApp(id)}
-            </div>
-        `;
-
-        layer.appendChild(win);
-        windows[id] = win;
-
-        focusWindow(id);
-        addTaskButton(id);
-        makeDraggable(win);
-        setupApp(id, win);
-
-        win.addEventListener("pointerdown", () => {
-            focusWindow(id);
-        });
-
-        win.querySelectorAll("[data-action]").forEach(button => {
-            button.addEventListener("click", event => {
-                event.stopPropagation();
-
-                const action = button.dataset.action;
-
-                if (action === "close") closeApp(id);
-
-                if (action === "min") minimizeApp(id);
-
-                if (action === "max") maximizeApp(id);
-            });
-        });
-    }
-
-    function focusWindow(id) {
-        if (!windows[id]) return;
-
-        const win = windows[id];
-
-        win.style.display = "flex";
-        win.style.zIndex = ++zIndex;
-
-        activeWindow = id;
-
-        $("#activeTitle").textContent =
-            apps[id].name.toUpperCase();
-
-        updateTaskbar();
-    }
-
-    function closeApp(id) {
-        if (!windows[id]) return;
-
-        windows[id].remove();
-
-        delete windows[id];
-
-        $(`.task-app[data-app="${id}"]`)?.remove();
-
-        if (activeWindow === id) {
-            activeWindow = null;
-
-            const remaining = Object.keys(windows);
-
-            if (remaining.length) {
-                focusWindow(remaining[remaining.length - 1]);
-            } else {
-                $("#activeTitle").textContent = "WEB DESKTOP";
-            }
-        }
-
-        updateTaskbar();
-    }
-
-    function minimizeApp(id) {
-        if (!windows[id]) return;
-
-        windows[id].style.display = "none";
-
-        if (activeWindow === id) {
-            activeWindow = null;
-            $("#activeTitle").textContent = "WEB DESKTOP";
-        }
-
-        updateTaskbar();
-    }
-
-    function maximizeApp(id) {
-        if (!windows[id]) return;
-
-        const win = windows[id];
-
-        win.classList.toggle("maximized");
-    }
-
-    function addTaskButton(id) {
-        const button = document.createElement("button");
-
-        button.className = "task-app";
-        button.dataset.app = id;
-
-        button.textContent =
-            apps[id].icon + " " + apps[id].name;
-
-        button.addEventListener("click", () => {
-            if (windows[id].style.display === "none") {
-                focusWindow(id);
-            } else if (activeWindow === id) {
-                minimizeApp(id);
-            } else {
-                focusWindow(id);
-            }
-        });
-
-        taskApps.appendChild(button);
-    }
-
-    function updateTaskbar() {
-        $$(".task-app").forEach(button => {
-            button.classList.toggle(
-                "active",
-                button.dataset.app === activeWindow
-            );
-        });
-    }
-
-    /* DRAGGABLE WINDOWS */
-
-    function makeDraggable(win) {
-        const header = $(".window-header", win);
-
-        let dragging = false;
-        let startX = 0;
-        let startY = 0;
-        let originalX = 0;
-        let originalY = 0;
-
-        header.addEventListener("pointerdown", event => {
-            if (event.target.closest(".window-controls")) return;
-            if (win.classList.contains("maximized")) return;
-
-            dragging = true;
-
-            header.setPointerCapture(event.pointerId);
-
-            const rect = win.getBoundingClientRect();
-
-            startX = event.clientX;
-            startY = event.clientY;
-
-            originalX = rect.left;
-            originalY = rect.top;
-
-            win.style.transform = "none";
-            win.style.left = originalX + "px";
-            win.style.top = originalY + "px";
-
-            focusWindow(win.dataset.app);
-        });
-
-        header.addEventListener("pointermove", event => {
-            if (!dragging) return;
-
-            const maxX = innerWidth - win.offsetWidth;
-            const maxY = innerHeight - 70;
-
-            const x = Math.max(
-                0,
-                Math.min(
-                    maxX,
-                    originalX + event.clientX - startX
-                )
-            );
-
-            const y = Math.max(
-                43,
-                Math.min(
-                    maxY,
-                    originalY + event.clientY - startY
-                )
-            );
-
-            win.style.left = x + "px";
-            win.style.top = y + "px";
-        });
-
-        const stopDragging = () => {
-            dragging = false;
-        };
-
-        header.addEventListener("pointerup", stopDragging);
-        header.addEventListener("pointercancel", stopDragging);
-    }
-
-    /* APPLICATION CONTENT */
-
-    function renderApp(id) {
-
-        if (id === "browser") {
+const $ = selector => document.querySelector(selector);
+
+const desktop = $("#desktop");
+const workspace = $("#workspace");
+const overview = $("#overview");
+
+const apps = [
+    ["browser", "🌐", "Web Browser"],
+    ["files", "📁", "Files"],
+    ["terminal", "▣", "Terminal"],
+    ["notes", "📝", "Notes"],
+    ["settings", "⚙", "Settings"],
+    ["calculator", "＋", "Calculator"],
+    ["about", "ⓘ", "About GamingOS"]
+];
+
+let windowZ = 10;
+let windowCount = 0;
+
+function notify(message) {
+    const toast = $("#toast");
+    toast.textContent = message;
+    toast.classList.add("show");
+
+    clearTimeout(notify.timer);
+    notify.timer = setTimeout(() => {
+        toast.classList.remove("show");
+    }, 2200);
+}
+
+function updateClock() {
+    $("#clock").textContent = new Date().toLocaleString([], {
+        weekday: "short",
+        hour: "2-digit",
+        minute: "2-digit"
+    });
+}
+
+setInterval(updateClock, 1000);
+updateClock();
+
+function contentFor(id) {
+    switch (id) {
+        case "browser":
             return `
-                <div class="browser-toolbar">
-                    <button id="backButton">←</button>
-                    <button id="forwardButton">→</button>
-                    <button id="reloadButton">↻</button>
-
-                    <input
-                        id="urlInput"
-                        class="field"
-                        value="https://example.com"
-                        placeholder="Search or enter URL"
-                    >
-
-                    <button class="action" id="goButton">
-                        Go
-                    </button>
-                </div>
-
-                <iframe
-                    class="browser-frame"
-                    id="browserFrame"
-                    src="https://example.com"
-                    title="GamingOS Browser"
-                    sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-                ></iframe>
-
-                <p class="muted">
-                    Some websites block iframe embedding.
-                    External websites may not work here.
-                </p>
-            `;
-        }
-
-        if (id === "games") {
-            return `
-                <h2 class="section-title">Game Library</h2>
-
-                <p class="muted">
-                    Discover browser games.
-                </p>
-
-                <div class="card-grid">
-
-                    <article class="card">
-                        <div class="icon games-icon">2048</div>
-                        <h3>2048</h3>
-                        <p>Combine numbers to reach 2048.</p>
-                        <button class="action" data-game="https://play2048.co/">
-                            Play
-                        </button>
-                    </article>
-
-                    <article class="card">
-                        <div class="icon browser-icon">⬡</div>
-                        <h3>Hextris</h3>
-                        <p>A fast-paced puzzle game.</p>
-                        <button class="action" data-game="https://hextris.io/">
-                            Play
-                        </button>
-                    </article>
-
-                    <article class="card">
-                        <div class="icon calculator-icon">🎮</div>
-                        <h3>CrazyGames</h3>
-                        <p>Explore a browser game collection.</p>
-                        <button class="action" data-game="https://www.crazygames.com/">
-                            Explore
-                        </button>
-                    </article>
-
+                <div class="browser">
+                    <div class="browser-toolbar">
+                        <button id="back">←</button>
+                        <button id="forward">→</button>
+                        <button id="reload">↻</button>
+                        <input id="address" value="https://example.com">
+                        <button id="go">Go</button>
+                    </div>
+                    <div class="browser-start" id="browserStart">
+                        <h2>GamingOS Web</h2>
+                        <p>Welcome to the GamingOS browser.</p>
+                        <p>Enter a website address above.</p>
+                        <button data-url="https://wikipedia.org">Wikipedia</button>
+                        <button data-url="https://github.com">GitHub</button>
+                        <button data-url="https://example.com">Example</button>
+                    </div>
+                    <iframe id="browserFrame" class="hidden"
+                        title="Browser window"
+                        sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-downloads">
+                    </iframe>
                 </div>
             `;
-        }
 
-        if (id === "files") {
+        case "files":
             return `
-                <h2 class="section-title">My Files</h2>
-
-                <p class="muted">
-                    GamingOS local storage.
-                </p>
-
-                <div class="card-grid">
-
-                    <article class="card">
-                        <div class="icon files-icon">📁</div>
-                        <h3>Documents</h3>
-                        <p>Your documents.</p>
-                    </article>
-
-                    <article class="card">
-                        <div class="icon files-icon">🖼</div>
-                        <h3>Pictures</h3>
-                        <p>Your pictures.</p>
-                    </article>
-
-                    <article class="card">
-                        <div class="icon files-icon">⬇</div>
-                        <h3>Downloads</h3>
-                        <p>Browser downloads.</p>
-                    </article>
-
-                </div>
-
-                <p class="muted">
-                    File management is currently a visual interface.
-                </p>
-            `;
-        }
-
-        if (id === "settings") {
-            return `
-                <h2 class="section-title">Settings</h2>
-
-                <p class="muted">
-                    Personalize your desktop.
-                </p>
-
-                <div class="setting-row">
-                    <span>Accent color</span>
-                    <input
-                        id="accentColor"
-                        type="color"
-                        value="${escapeHTML(localStorage.getItem("gosAccent") || "#5597ff")}"
-                    >
-                </div>
-
-                <div class="setting-row">
-                    <span>Wallpaper</span>
-                    <select id="wallpaperChoice" class="field">
-                        <option value="blue">Aurora Blue</option>
-                        <option value="purple">Purple Night</option>
-                        <option value="green">Neon Green</option>
-                        <option value="dark">Dark Minimal</option>
-                    </select>
-                </div>
-
-                <div class="setting-row">
-                    <span>Fullscreen</span>
-                    <button class="action" id="fullscreenButton">
-                        Enter Fullscreen
-                    </button>
-                </div>
-
-                <div class="setting-row">
-                    <span>System</span>
-                    <span class="muted">GamingOS 1.0</span>
-                </div>
-
-                <div class="setting-row">
-                    <span>Edition</span>
-                    <span class="muted">Liquid Web Edition</span>
+                <div class="file-app">
+                    <nav class="file-sidebar">
+                        <button>⌂ Home</button>
+                        <button>◷ Recent</button>
+                        <button>★ Starred</button>
+                        <button>▣ Downloads</button>
+                        <button>▤ Documents</button>
+                        <button>▧ Pictures</button>
+                    </nav>
+                    <div class="file-content">
+                        <h2>Home</h2>
+                        <p>GamingOS folders</p>
+                        <p>📁 Documents</p>
+                        <p>📁 Downloads</p>
+                        <p>📁 Pictures</p>
+                        <p>📁 Music</p>
+                        <p>📁 Videos</p>
+                        <p>📁 Games</p>
+                    </div>
                 </div>
             `;
-        }
 
-        if (id === "calculator") {
+        case "terminal":
+            return `
+                <div class="terminal">
+                    <div id="terminalOutput">
+                        GamingOS Terminal 1.0<br>
+                        Type <b>help</b> for commands.<br><br>
+                    </div>
+                    <div class="terminal-input">
+                        user@gamingos:~$
+                        <input id="terminalInput" autocomplete="off">
+                    </div>
+                </div>
+            `;
+
+        case "notes":
+            return `
+                <div class="notes">
+                    <textarea id="notesText"
+                        placeholder="Start writing..."></textarea>
+                </div>
+            `;
+
+        case "settings":
+            return `
+                <div class="settings">
+                    <h2>Settings</h2>
+                    <div class="setting">
+                        <div>
+                            <b>Appearance</b>
+                            <small>Desktop appearance</small>
+                        </div>
+                        <span>Dark</span>
+                    </div>
+                    <div class="setting">
+                        <div>
+                            <b>Desktop</b>
+                            <small>GNOME-inspired interface</small>
+                        </div>
+                        <span>GamingOS</span>
+                    </div>
+                    <div class="setting">
+                        <div>
+                            <b>Version</b>
+                            <small>GamingOS Web Edition</small>
+                        </div>
+                        <span>1.0</span>
+                    </div>
+                    <div class="setting">
+                        <div>
+                            <b>Animations</b>
+                            <small>Interface transitions</small>
+                        </div>
+                        <input type="checkbox" id="animations" checked>
+                    </div>
+                </div>
+            `;
+
+        case "calculator":
             return `
                 <div class="calculator">
-
-                    <input
-                        id="calcDisplay"
-                        class="field calc-display"
-                        value="0"
-                        readonly
-                    >
-
+                    <div class="calc-display" id="calcDisplay">0</div>
                     <div class="calc-grid">
-                        ${[
-                            "7","8","9","÷",
-                            "4","5","6","×",
-                            "1","2","3","−",
-                            "0",".","C","+",
-                            "(" ,")","⌫","="
-                        ].map(key => `
-                            <button
-                                data-key="${key}"
-                                class="${"÷×−+".includes(key) ? "operator" : ""}"
-                            >
-                                ${key}
-                            </button>
-                        `).join("")}
+                        ${["C","(",")","÷","7","8","9","×","4","5","6","−","1","2","3","+","0",".","⌫","="]
+                            .map(key => `<button data-key="${key}" class="${key === "=" ? "equals" : ""}">${key}</button>`)
+                            .join("")}
                     </div>
-
                 </div>
             `;
-        }
 
-        if (id === "terminal") {
+        default:
             return `
-                <h2 class="section-title">GamingOS Terminal</h2>
-
-                <p class="muted">
-                    Simulated terminal environment.
-                </p>
-
-                <div id="terminalOutput" class="terminal-output">GamingOS Terminal v1.0
-Welcome, guest.
-
-Type help to see available commands.
-</div>
-
-                <div class="terminal-line">
-                    guest@gamingos:~$
-                    <input
-                        id="terminalInput"
-                        class="field"
-                        autocomplete="off"
-                    >
+                <div class="settings">
+                    <h2>GamingOS</h2>
+                    <p>A desktop environment inspired by GNOME.</p>
+                    <p>Version 1.0 Web Edition.</p>
+                    <p>This is a website, not a full operating system.</p>
                 </div>
             `;
-        }
+    }
+}
 
-        if (id === "notes") {
-            return `
-                <h2 class="section-title">Notes</h2>
+function focusWindow(win) {
+    document.querySelectorAll(".window").forEach(window => {
+        window.style.borderColor = "#59616c";
+    });
 
-                <p class="muted">
-                    Your notes save automatically.
-                </p>
+    win.style.borderColor = "#8a9aaa";
+    win.style.zIndex = ++windowZ;
+}
 
-                <textarea
-                    id="notesArea"
-                    class="note-area"
-                    placeholder="Write something..."
-                ></textarea>
-            `;
-        }
+function createWindow(id) {
+    const app = apps.find(item => item[0] === id);
+    if (!app) return;
 
-        return "<p>Application unavailable.</p>";
+    const existing = document.querySelector(
+        `.window[data-app="${id}"]`
+    );
+
+    if (existing) {
+        existing.style.display = "flex";
+        focusWindow(existing);
+        overview.classList.add("hidden");
+        return;
     }
 
-    /* BROWSER */
+    windowCount++;
 
-    function normalizeURL(value) {
-        let url = value.trim();
+    const win = document.createElement("section");
+    win.className = "window";
+    win.dataset.app = id;
 
-        if (!url) return "";
+    win.style.left = `${100 + windowCount * 22}px`;
+    win.style.top = `${65 + windowCount * 18}px`;
+    win.style.zIndex = ++windowZ;
 
-        if (!/^https?:\/\//i.test(url)) {
-            if (url.includes(".") && !url.includes(" ")) {
-                url = "https://" + url;
-            } else {
-                url = "https://www.google.com/search?q=" +
-                    encodeURIComponent(url);
+    win.innerHTML = `
+        <div class="titlebar">
+            <span class="window-title">${app[1]} ${app[2]}</span>
+            <div class="window-controls">
+                <button class="minimize">−</button>
+                <button class="maximize">□</button>
+                <button class="close">×</button>
+            </div>
+        </div>
+        <div class="window-body">
+            ${contentFor(id)}
+        </div>
+        <div class="resize"></div>
+    `;
+
+    workspace.appendChild(win);
+
+    focusWindow(win);
+    setupWindow(win);
+    setupApp(win, id);
+
+    overview.classList.add("hidden");
+    updateDock();
+}
+
+function setupWindow(win) {
+    const titlebar = win.querySelector(".titlebar");
+
+    win.addEventListener("pointerdown", () => focusWindow(win));
+
+    win.querySelector(".close").onclick = () => {
+        win.remove();
+        updateDock();
+    };
+
+    win.querySelector(".minimize").onclick = () => {
+        win.style.display = "none";
+        updateDock();
+    };
+
+    win.querySelector(".maximize").onclick = () => {
+        win.classList.toggle("maximized");
+    };
+
+    let drag = null;
+
+    titlebar.addEventListener("pointerdown", event => {
+        if (event.target.closest("button")) return;
+        if (win.classList.contains("maximized")) return;
+
+        focusWindow(win);
+
+        drag = {
+            x: event.clientX - win.offsetLeft,
+            y: event.clientY - win.offsetTop
+        };
+
+        titlebar.setPointerCapture(event.pointerId);
+    });
+
+    titlebar.addEventListener("pointermove", event => {
+        if (!drag) return;
+
+        win.style.left = Math.max(
+            0,
+            event.clientX - drag.x
+        ) + "px";
+
+        win.style.top = Math.max(
+            32,
+            event.clientY - drag.y
+        ) + "px";
+    });
+
+    titlebar.addEventListener("pointerup", () => {
+        drag = null;
+    });
+
+    const resize = win.querySelector(".resize");
+    let sizing = null;
+
+    resize.addEventListener("pointerdown", event => {
+        event.preventDefault();
+
+        sizing = {
+            x: event.clientX,
+            y: event.clientY,
+            width: win.offsetWidth,
+            height: win.offsetHeight
+        };
+
+        resize.setPointerCapture(event.pointerId);
+    });
+
+    resize.addEventListener("pointermove", event => {
+        if (!sizing) return;
+
+        win.style.width = Math.max(
+            300,
+            sizing.width + event.clientX - sizing.x
+        ) + "px";
+
+        win.style.height = Math.max(
+            200,
+            sizing.height + event.clientY - sizing.y
+        ) + "px";
+    });
+
+    resize.addEventListener("pointerup", () => {
+        sizing = null;
+    });
+}
+
+function setupApp(win, id) {
+    if (id === "browser") {
+        const address = win.querySelector("#address");
+        const frame = win.querySelector("#browserFrame");
+        const start = win.querySelector("#browserStart");
+
+        function navigate() {
+            let url = address.value.trim();
+
+            if (!url) return;
+
+            if (!/^https?:\/\//i.test(url)) {
+                if (url.includes(".") && !url.includes(" ")) {
+                    url = "https://" + url;
+                } else {
+                    url = "https://www.google.com/search?q=" +
+                        encodeURIComponent(url);
+                }
             }
+
+            address.value = url;
+            frame.src = url;
+            frame.classList.remove("hidden");
+            start.classList.add("hidden");
         }
 
-        try {
-            const parsed = new URL(url);
+        win.querySelector("#go").onclick = navigate;
 
-            if (!["http:", "https:"].includes(parsed.protocol)) {
-                return "";
+        address.addEventListener("keydown", event => {
+            if (event.key === "Enter") navigate();
+        });
+
+        win.querySelectorAll("[data-url]").forEach(button => {
+            button.onclick = () => {
+                address.value = button.dataset.url;
+                navigate();
+            };
+        });
+
+        win.querySelector("#reload").onclick = () => {
+            try {
+                frame.contentWindow.location.reload();
+            } catch {
+                notify("This website blocks browser controls.");
             }
+        };
 
-            return parsed.href;
+        win.querySelector("#back").onclick = () => {
+            try {
+                frame.contentWindow.history.back();
+            } catch {
+                notify("Navigation unavailable.");
+            }
+        };
 
-        } catch {
-            return "";
-        }
+        win.querySelector("#forward").onclick = () => {
+            try {
+                frame.contentWindow.history.forward();
+            } catch {
+                notify("Navigation unavailable.");
+            }
+        };
     }
 
-    function openBrowser(url) {
-        openApp("browser");
+    if (id === "notes") {
+        const textarea = win.querySelector("#notesText");
+        textarea.value = localStorage.getItem("gamingos-notes") || "";
 
-        const win = windows.browser;
-
-        if (!win) return;
-
-        $("#urlInput", win).value = url;
-        $("#goButton", win).click();
+        textarea.addEventListener("input", () => {
+            localStorage.setItem("gamingos-notes", textarea.value);
+        });
     }
 
-    /* APP INITIALIZATION */
+    if (id === "terminal") {
+        const input = win.querySelector("#terminalInput");
+        const output = win.querySelector("#terminalOutput");
 
-    function setupApp(id, win) {
-        const body = $(".window-body", win);
+        input.addEventListener("keydown", event => {
+            if (event.key !== "Enter") return;
 
-        if (id === "browser") {
-            const input = $("#urlInput", body);
-            const frame = $("#browserFrame", body);
+            const command = input.value.trim();
+            const safe = escapeHTML(command);
 
-            const navigate = () => {
-                const url = normalizeURL(input.value);
+            output.innerHTML +=
+                `<span style="color:#8bd49b">user@gamingos:~$</span> ${safe}<br>`;
 
-                if (!url) {
-                    notify("Invalid web address.");
+            let result = "";
+
+            switch (command) {
+                case "help":
+                    result = "help, clear, date, whoami, uname, ls, neofetch";
+                    break;
+                case "date":
+                    result = new Date().toString();
+                    break;
+                case "whoami":
+                    result = "user";
+                    break;
+                case "uname":
+                    result = "GamingOS Web 1.0";
+                    break;
+                case "ls":
+                    result = "Desktop Documents Downloads Games Music Pictures Videos";
+                    break;
+                case "neofetch":
+                    result = "   G      OS: GamingOS Web Edition\n  /_\\     Desktop: GNOME-inspired\n           Shell: Browser";
+                    break;
+                case "clear":
+                    output.innerHTML = "";
+                    input.value = "";
                     return;
-                }
-
-                input.value = url;
-                frame.src = url;
-            };
-
-            $("#goButton", body).addEventListener("click", navigate);
-
-            input.addEventListener("keydown", event => {
-                if (event.key === "Enter") navigate();
-            });
-
-            $("#reloadButton", body).addEventListener("click", () => {
-                frame.src = frame.src;
-            });
-
-            $("#backButton", body).addEventListener("click", () => {
-                notify("Browser history is restricted.");
-            });
-
-            $("#forwardButton", body).addEventListener("click", () => {
-                notify("Browser history is restricted.");
-            });
-        }
-
-        if (id === "games") {
-            $$("[data-game]", body).forEach(button => {
-                button.addEventListener("click", () => {
-                    openBrowser(button.dataset.game);
-                });
-            });
-        }
-
-        if (id === "settings") {
-            const accent = $("#accentColor", body);
-            const wallpaperSelect = $("#wallpaperChoice", body);
-
-            accent.addEventListener("input", event => {
-                document.documentElement.style.setProperty(
-                    "--accent",
-                    event.target.value
-                );
-
-                localStorage.setItem("gosAccent", event.target.value);
-            });
-
-            const wallpapers = {
-                blue: `
-                    radial-gradient(ellipse at 75% 25%,rgba(40,105,220,.3),transparent 40%),
-                    radial-gradient(ellipse at 20% 80%,rgba(0,195,220,.14),transparent 40%),
-                    linear-gradient(135deg,#070a12,#10182b 55%,#080d19)
-                `,
-                purple: `
-                    radial-gradient(ellipse at 70% 30%,#56358c,transparent 45%),
-                    linear-gradient(135deg,#100b1b,#201436)
-                `,
-                green: `
-                    radial-gradient(ellipse at 70% 35%,#176e55,transparent 45%),
-                    linear-gradient(135deg,#07130f,#102c25)
-                `,
-                dark: `
-                    radial-gradient(ellipse at center,#202a3b,transparent 65%),
-                    #080b13
-                `
-            };
-
-            wallpaperSelect.addEventListener("change", event => {
-                $(".wallpaper").style.background =
-                    wallpapers[event.target.value];
-
-                localStorage.setItem(
-                    "gosWallpaper",
-                    event.target.value
-                );
-            });
-
-            const savedWallpaper =
-                localStorage.getItem("gosWallpaper");
-
-            if (savedWallpaper && wallpapers[savedWallpaper]) {
-                wallpaperSelect.value = savedWallpaper;
-                wallpaperSelect.dispatchEvent(new Event("change"));
+                default:
+                    if (command) result = `Command not found: ${command}`;
             }
 
-            $("#fullscreenButton", body).addEventListener("click", async () => {
-                try {
-                    if (!document.fullscreenElement) {
-                        await document.documentElement.requestFullscreen();
-                    } else {
-                        await document.exitFullscreen();
-                    }
-                } catch {
-                    notify("Fullscreen unavailable.");
-                }
-            });
-        }
+            output.innerHTML += escapeHTML(result) + "<br><br>";
+            output.scrollTop = output.scrollHeight;
+            input.value = "";
+        });
+    }
 
-        if (id === "calculator") {
-            let expression = "";
-            const display = $("#calcDisplay", body);
+    if (id === "settings") {
+        win.querySelector("#animations").onchange = event => {
+            document.body.style.transition = event.target.checked ? "" : "none";
+        };
+    }
 
-            $$("[data-key]", body).forEach(button => {
-                button.addEventListener("click", () => {
-                    const key = button.dataset.key;
+    if (id === "calculator") {
+        let expression = "";
+        const display = win.querySelector("#calcDisplay");
 
-                    if (key === "C") {
-                        expression = "";
-                    } else if (key === "⌫") {
-                        expression = expression.slice(0, -1);
-                    } else if (key === "=") {
-                        try {
-                            if (!/^[0-9+\-*/(). ]+$/.test(expression)) {
-                                throw new Error("Invalid expression");
-                            }
+        win.querySelectorAll("[data-key]").forEach(button => {
+            button.onclick = () => {
+                const key = button.dataset.key;
 
-                            const result = Function(
-                                '"use strict";return (' + expression + ')'
-                            )();
+                if (key === "C") {
+                    expression = "";
+                } else if (key === "⌫") {
+                    expression = expression.slice(0, -1);
+                } else if (key === "=") {
+                    try {
+                        const normalized = expression
+                            .replace(/×/g, "*")
+                            .replace(/÷/g, "/")
+                            .replace(/−/g, "-");
 
-                            if (!Number.isFinite(result)) {
-                                throw new Error("Invalid result");
-                            }
-
-                            expression = String(result);
-
-                        } catch {
-                            expression = "";
-                            notify("Invalid calculation.");
+                        if (!/^[0-9+\-*/(). ]+$/.test(normalized)) {
+                            throw new Error("Invalid");
                         }
-                    } else {
-                        expression += ({
-                            "÷": "/",
-                            "×": "*",
-                            "−": "-"
-                        }[key] || key);
+
+                        expression = String(
+                            Function('"use strict"; return (' +
+                            normalized + ')')()
+                        );
+                    } catch {
+                        expression = "Error";
                     }
+                } else {
+                    expression += key;
+                }
 
-                    display.value = expression || "0";
-                });
-            });
-        }
-
-        if (id === "terminal") {
-            const output = $("#terminalOutput", body);
-            const input = $("#terminalInput", body);
-
-            const commands = {
-                help: "Commands: help, date, whoami, apps, clear, about, version",
-                whoami: "guest",
-                apps: "Browser, Games, Files, Settings, Calculator, Terminal, Notes",
-                about: "GamingOS Liquid Web Edition",
-                version: "GamingOS 1.0",
-                date: () => new Date().toString()
+                display.textContent = expression || "0";
             };
-
-            input.addEventListener("keydown", event => {
-                if (event.key !== "Enter") return;
-
-                const command = input.value.trim().toLowerCase();
-
-                input.value = "";
-
-                if (command === "clear") {
-                    output.textContent = "";
-                    return;
-                }
-
-                let result = commands[command];
-
-                if (typeof result === "function") {
-                    result = result();
-                }
-
-                output.textContent +=
-                    "\nguest@gamingos:~$ " + command +
-                    "\n" + (result || "Command not found. Type help.") + "\n";
-
-                output.scrollTop = output.scrollHeight;
-            });
-        }
-
-        if (id === "notes") {
-            const area = $("#notesArea", body);
-
-            area.value = localStorage.getItem("gosNotes") || "";
-
-            area.addEventListener("input", () => {
-                localStorage.setItem("gosNotes", area.value);
-            });
-        }
-    }
-
-    /* START MENU */
-
-    function toggleStartMenu() {
-        startMenu.classList.toggle("hidden");
-
-        if (!startMenu.classList.contains("hidden")) {
-            $("#appSearch").focus();
-        }
-    }
-
-    $("#startButton").addEventListener("click", toggleStartMenu);
-    $("#brandButton").addEventListener("click", toggleStartMenu);
-
-    $("#restartButton").addEventListener("click", () => {
-        Object.keys(windows).forEach(closeApp);
-
-        startMenu.classList.add("hidden");
-
-        notify("Desktop refreshed.");
-    });
-
-    $$("[data-app]").forEach(button => {
-        button.addEventListener("click", () => {
-            openApp(button.dataset.app);
         });
-    });
-
-    $("#appSearch").addEventListener("input", event => {
-        const query = event.target.value.toLowerCase();
-
-        $$(".pinned-grid button").forEach(button => {
-            button.style.display =
-                button.textContent.toLowerCase().includes(query)
-                    ? "flex"
-                    : "none";
-        });
-    });
-
-    document.addEventListener("pointerdown", event => {
-        if (
-            !event.target.closest("#startMenu") &&
-            !event.target.closest("#startButton") &&
-            !event.target.closest("#brandButton")
-        ) {
-            startMenu.classList.add("hidden");
-        }
-    });
-
-    /* CLOCK */
-
-    function updateClock() {
-        const time = new Date().toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit"
-        });
-
-        $("#clock").textContent = time;
-        $("#taskClock").textContent = time;
     }
+}
 
-    updateClock();
-    setInterval(updateClock, 15000);
+function escapeHTML(value) {
+    return value.replace(/[&<>"']/g, character => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+    })[character]);
+}
 
-    /* KEYBOARD SHORTCUTS */
-
-    document.addEventListener("keydown", event => {
-        if (event.key === "Escape") {
-            startMenu.classList.add("hidden");
-        }
-
-        if (event.altKey && event.key.toLowerCase() === "f") {
-            event.preventDefault();
-
-            if (document.fullscreenElement) {
-                document.exitFullscreen?.();
-            } else {
-                document.documentElement.requestFullscreen?.()
-                    .catch(() => notify("Fullscreen unavailable."));
-            }
-        }
-    });
-
-    /* RESTORE SETTINGS */
-
-    const savedAccent = localStorage.getItem("gosAccent");
-
-    if (savedAccent) {
-        document.documentElement.style.setProperty(
-            "--accent",
-            savedAccent
+function updateDock() {
+    document.querySelectorAll(".dock-app").forEach(button => {
+        const appWindow = document.querySelector(
+            `.window[data-app="${button.dataset.app}"]`
         );
+
+        button.classList.toggle("running", !!appWindow);
+    });
+}
+
+function renderOverview() {
+    const running = $("#runningApps");
+    const grid = $("#appGrid");
+
+    running.innerHTML = "";
+
+    document.querySelectorAll(".window").forEach(win => {
+        const app = apps.find(item => item[0] === win.dataset.app);
+
+        const button = document.createElement("button");
+        button.className = "running-item";
+        button.textContent = app[1] + " " + app[2];
+
+        button.onclick = () => {
+            win.style.display = "flex";
+            focusWindow(win);
+            overview.classList.add("hidden");
+        };
+
+        running.appendChild(button);
+    });
+
+    renderApps("");
+}
+
+function renderApps(query) {
+    const grid = $("#appGrid");
+    grid.innerHTML = "";
+
+    apps.filter(app =>
+        app[2].toLowerCase().includes(query.toLowerCase())
+    ).forEach(app => {
+        const button = document.createElement("button");
+        button.className = "app-tile";
+
+        button.innerHTML = `
+            <span class="app-icon">${app[1]}</span>
+            <span class="app-name">${app[2]}</span>
+        `;
+
+        button.onclick = () => createWindow(app[0]);
+        grid.appendChild(button);
+    });
+}
+
+function toggleOverview() {
+    overview.classList.toggle("hidden");
+    $("#systemPanel").classList.add("hidden");
+
+    if (!overview.classList.contains("hidden")) {
+        renderOverview();
+        $("#searchApps").value = "";
+        $("#searchApps").focus();
     }
+}
 
-    /* STARTUP */
+$("#activities").onclick = toggleOverview;
+$("#showApps").onclick = toggleOverview;
 
-    window.addEventListener("load", () => {
+$("#searchApps").addEventListener("input", event => {
+    renderApps(event.target.value);
+});
+
+document.querySelectorAll(".dock-app").forEach(button => {
+    button.onclick = () => createWindow(button.dataset.app);
+});
+
+$("#systemButton").onclick = () => {
+    $("#systemPanel").classList.toggle("hidden");
+    overview.classList.add("hidden");
+};
+
+document.querySelectorAll(".toggle").forEach(button => {
+    button.onclick = () => {
+        button.classList.toggle("enabled");
+        button.style.background = button.classList.contains("enabled")
+            ? "#3584e4"
+            : "";
+    };
+});
+
+$("#brightness").oninput = event => {
+    $(".wallpaper").style.filter =
+        `brightness(${event.target.value / 85})`;
+};
+
+$("#openSettings").onclick = () => createWindow("settings");
+
+$("#shutdown").onclick = () => {
+    if (confirm("Power off GamingOS?")) {
+        desktop.classList.add("hidden");
+        $("#boot").classList.remove("hidden");
+
         setTimeout(() => {
             $("#boot").classList.add("hidden");
-            $("#desktop").classList.remove("hidden");
-        }, 1100);
-    });
+            desktop.classList.remove("hidden");
+        }, 1500);
+    }
+};
 
-})();
+document.addEventListener("keydown", event => {
+    if (event.key === "Escape") {
+        overview.classList.add("hidden");
+        $("#systemPanel").classList.add("hidden");
+    }
+
+    if (event.key === "F1" || (event.altKey && event.code === "Space")) {
+        event.preventDefault();
+        toggleOverview();
+    }
+
+    if (event.key === "F2") {
+        createWindow("browser");
+    }
+});
+
+setTimeout(() => {
+    $("#boot").classList.add("hidden");
+    desktop.classList.remove("hidden");
+    createWindow("browser");
+}, 1600);
