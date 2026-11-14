@@ -4,165 +4,57 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#080b13">
-    <meta name="description" content="GamingOS - A gaming-focused web desktop.">
-    <title>GamingOS Liquid Edition</title>
-
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-
+    <title>GamingOS</title>
     <link rel="stylesheet" href="style.css">
-    <script src="app.js" defer></script>
 </head>
-
 <body>
-
-    <!-- BOOT SCREEN -->
-    <div id="boot" class="boot-screen">
+    <div id="boot">
         <div class="boot-logo">G</div>
-        <div class="boot-name">Gaming<span>OS</span></div>
-        <div class="boot-track">
-            <div class="boot-progress"></div>
-        </div>
-        <p>STARTING GAMINGOS WEB EDITION</p>
+        <h2>GamingOS</h2>
+        <div class="loader"></div>
     </div>
 
-    <!-- DESKTOP -->
-    <main id="desktop" class="desktop hidden">
-
+    <main id="desktop" class="hidden">
         <div class="wallpaper"></div>
 
-        <!-- TOP BAR -->
         <header class="topbar">
-
-            <button class="brand" id="brandButton">
-                <span class="brand-logo">G</span>
-                GamingOS
-            </button>
-
-            <div class="topbar-center" id="activeTitle">
-                WEB DESKTOP
-            </div>
-
-            <div class="topbar-right">
-                <span class="online-dot"></span>
-                <span>ONLINE</span>
-                <span id="clock">00:00</span>
-            </div>
-
+            <button id="activities">Activities</button>
+            <div id="clock"></div>
+            <button id="systemButton">⌄</button>
         </header>
 
-        <!-- DESKTOP ICONS -->
-        <section class="desktop-icons">
+        <aside class="dock">
+            <button class="dock-app" data-app="browser" title="Browser">🌐</button>
+            <button class="dock-app" data-app="files" title="Files">📁</button>
+            <button class="dock-app" data-app="terminal" title="Terminal">▣</button>
+            <button class="dock-app" data-app="notes" title="Notes">📝</button>
+            <button class="dock-app" data-app="settings" title="Settings">⚙</button>
+            <div class="dock-separator"></div>
+            <button id="showApps" title="Show Applications">▦</button>
+        </aside>
 
-            <button class="desktop-icon" data-app="browser">
-                <span class="icon browser-icon">◎</span>
-                <span>Browser</span>
-            </button>
+        <section id="workspace"></section>
 
-            <button class="desktop-icon" data-app="games">
-                <span class="icon games-icon">🎮</span>
-                <span>Games</span>
-            </button>
-
-            <button class="desktop-icon" data-app="files">
-                <span class="icon files-icon">📁</span>
-                <span>Files</span>
-            </button>
-
-            <button class="desktop-icon" data-app="settings">
-                <span class="icon settings-icon">⚙</span>
-                <span>Settings</span>
-            </button>
-
-            <button class="desktop-icon" data-app="terminal">
-                <span class="icon terminal-icon">>_</span>
-                <span>Terminal</span>
-            </button>
-
+        <section id="overview" class="hidden">
+            <input id="searchApps" placeholder="Search applications..." autocomplete="off">
+            <div id="runningApps"></div>
+            <div id="appGrid"></div>
         </section>
 
-        <!-- APPLICATION WINDOWS -->
-        <div id="windowLayer"></div>
-
-        <!-- START MENU -->
-        <section id="startMenu" class="start-menu hidden">
-
-            <div class="start-search">
-                <span>⌕</span>
-                <input id="appSearch" placeholder="Search applications...">
-            </div>
-
-            <h3>Pinned applications</h3>
-
-            <div class="pinned-grid">
-
-                <button data-app="browser">
-                    <span class="mini browser-icon">◎</span>
-                    Browser
-                </button>
-
-                <button data-app="games">
-                    <span class="mini games-icon">🎮</span>
-                    Games
-                </button>
-
-                <button data-app="files">
-                    <span class="mini files-icon">📁</span>
-                    Files
-                </button>
-
-                <button data-app="settings">
-                    <span class="mini settings-icon">⚙</span>
-                    Settings
-                </button>
-
-                <button data-app="calculator">
-                    <span class="mini calculator-icon">＋</span>
-                    Calculator
-                </button>
-
-                <button data-app="terminal">
-                    <span class="mini terminal-icon">>_</span>
-                    Terminal
-                </button>
-
-                <button data-app="notes">
-                    <span class="mini files-icon">✎</span>
-                    Notes
-                </button>
-
-            </div>
-
-            <div class="start-footer">
-                <span>GamingOS Web Edition</span>
-                <button id="restartButton">Refresh desktop ↻</button>
-            </div>
-
+        <section id="systemPanel" class="hidden">
+            <h3>Quick Settings</h3>
+            <button class="toggle">◉ Wi-Fi</button>
+            <button class="toggle">ᛒ Bluetooth</button>
+            <button class="toggle">☾ Night Light</button>
+            <label>Brightness <input type="range" min="20" max="100" value="85" id="brightness"></label>
+            <label>Volume <input type="range" min="0" max="100" value="65"></label>
+            <button id="openSettings">All Settings</button>
+            <button id="shutdown">⏻ Power Off</button>
         </section>
 
-        <!-- DOCK -->
-        <footer class="taskbar">
-
-            <button id="startButton" class="start-button" aria-label="Start menu">
-                <span>G</span>
-            </button>
-
-            <div id="taskApps"></div>
-
-            <div class="system-tray">
-                <span>⌨</span>
-                <span>◉</span>
-                <span id="taskClock">00:00</span>
-            </div>
-
-        </footer>
-
-        <!-- NOTIFICATIONS -->
-        <div id="toast" class="toast hidden"></div>
-
+        <div id="toast"></div>
     </main>
 
+    <script src="app.js"></script>
 </body>
 </html>
