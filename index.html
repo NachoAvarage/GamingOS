@@ -4,55 +4,95 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#242424">
     <title>GamingOS</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div id="boot">
-        <div class="boot-logo">G</div>
-        <h2>GamingOS</h2>
-        <div class="loader"></div>
+    <div id="boot-screen">
+        <div class="boot-logo">g</div>
+        <div class="boot-name">GamingOS</div>
+        <div class="boot-spinner"></div>
     </div>
 
     <main id="desktop" class="hidden">
         <div class="wallpaper"></div>
 
         <header class="topbar">
-            <button id="activities">Activities</button>
-            <div id="clock"></div>
-            <button id="systemButton">⌄</button>
+            <button class="topbar-left" id="activities">Activities</button>
+            <button class="topbar-clock" id="clock">Sat 10:00</button>
+            <button class="topbar-right" id="systemButton" aria-label="System menu">
+                <span class="status-icon">◉</span>
+                <span class="status-icon">⌁</span>
+                <span class="status-icon">▰</span>
+                <span class="chevron">⌄</span>
+            </button>
         </header>
 
-        <aside class="dock">
-            <button class="dock-app" data-app="browser" title="Browser">🌐</button>
-            <button class="dock-app" data-app="files" title="Files">📁</button>
-            <button class="dock-app" data-app="terminal" title="Terminal">▣</button>
-            <button class="dock-app" data-app="notes" title="Notes">📝</button>
-            <button class="dock-app" data-app="settings" title="Settings">⚙</button>
-            <div class="dock-separator"></div>
-            <button id="showApps" title="Show Applications">▦</button>
-        </aside>
+        <section id="workspace" aria-label="Desktop workspace"></section>
 
-        <section id="workspace"></section>
+        <nav class="dock" aria-label="Favorites">
+            <button class="dock-app" data-app="browser" title="Web Browser"><span>🌐</span></button>
+            <button class="dock-app" data-app="files" title="Files"><span>📁</span></button>
+            <button class="dock-app" data-app="terminal" title="Terminal"><span>▣</span></button>
+            <button class="dock-app" data-app="notes" title="Text Editor"><span>📝</span></button>
+            <button class="dock-app" data-app="settings" title="Settings"><span>⚙</span></button>
+            <span class="dock-separator"></span>
+            <button class="dock-app" data-app="calculator" title="Calculator"><span>▦</span></button>
+            <button class="dock-app" data-app="about" title="About GamingOS"><span>ⓘ</span></button>
+            <span class="dock-separator"></span>
+            <button class="dock-trash" id="showApps" title="Show Applications"><span>⠿</span></button>
+        </nav>
 
-        <section id="overview" class="hidden">
-            <input id="searchApps" placeholder="Search applications..." autocomplete="off">
-            <div id="runningApps"></div>
-            <div id="appGrid"></div>
+        <section id="overview" class="overview hidden">
+            <div class="overview-search-wrap">
+                <input id="searchApps" type="search" placeholder="Type to search…" autocomplete="off">
+            </div>
+            <div class="overview-content">
+                <div class="overview-running" id="runningApps"></div>
+                <div class="overview-grid" id="appGrid"></div>
+            </div>
+            <div class="overview-footer">GamingOS</div>
         </section>
 
-        <section id="systemPanel" class="hidden">
-            <h3>Quick Settings</h3>
-            <button class="toggle">◉ Wi-Fi</button>
-            <button class="toggle">ᛒ Bluetooth</button>
-            <button class="toggle">☾ Night Light</button>
-            <label>Brightness <input type="range" min="20" max="100" value="85" id="brightness"></label>
-            <label>Volume <input type="range" min="0" max="100" value="65"></label>
-            <button id="openSettings">All Settings</button>
-            <button id="shutdown">⏻ Power Off</button>
+        <section id="systemPanel" class="system-panel hidden">
+            <div class="system-panel-top">
+                <div class="system-user">
+                    <div class="user-avatar">G</div>
+                    <div>
+                        <strong>GamingOS</strong>
+                        <span>Desktop session</span>
+                    </div>
+                </div>
+                <button id="openSettings" class="panel-settings" title="Settings">⚙</button>
+            </div>
+
+            <div class="quick-toggles">
+                <button class="quick-toggle active" data-toggle="wifi">
+                    <span>⌁</span><span>Wi-Fi</span>
+                </button>
+                <button class="quick-toggle active" data-toggle="bluetooth">
+                    <span>ᛒ</span><span>Bluetooth</span>
+                </button>
+                <button class="quick-toggle" data-toggle="night">
+                    <span>☾</span><span>Night Light</span>
+                </button>
+                <button class="quick-toggle" data-toggle="airplane">
+                    <span>✈</span><span>Airplane Mode</span>
+                </button>
+            </div>
+
+            <div class="panel-slider">
+                <span>☼</span>
+                <input id="brightness" type="range" min="50" max="100" value="100">
+            </div>
+
+            <div class="panel-bottom">
+                <button id="shutdown">⏻ <span>Power Off</span></button>
+            </div>
         </section>
 
-        <div id="toast"></div>
+        <div id="toast" class="toast"></div>
     </main>
 
     <script src="app.js"></script>
