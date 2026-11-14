@@ -2,40 +2,29 @@
 (() => {
     "use strict";
 
-    // =========================================================
-    // GAMINGOS - GNOME DESKTOP
-    // Complete app.js
-    // =========================================================
-
-    const $ = (selector, parent = document) =>
-        parent.querySelector(selector);
-
-    const $$ = (selector, parent = document) =>
-        [...parent.querySelectorAll(selector)];
+    const $ = (selector, root = document) => root.querySelector(selector);
+    const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
     const desktop = $("#desktop");
     const workspace = $("#workspace");
-    const overview = $("#overview");
-    const boot = $("#boot");
+    const boot = $("#boot-screen");
 
-    // Stop safely if the main HTML structure is missing.
     if (!desktop || !workspace) {
-        console.error("GamingOS: #desktop or #workspace is missing from index.html.");
+        console.error("GamingOS: Required desktop elements are missing.");
         return;
     }
 
-    const apps = [
-        { id: "browser", icon: "🌐", name: "Web Browser", description: "Browse the web" },
-        { id: "files", icon: "📁", name: "Files", description: "Browse your files" },
-        { id: "terminal", icon: "▣", name: "Terminal", description: "Command line" },
-        { id: "notes", icon: "📝", name: "Text Editor", description: "Write notes" },
-        { id: "settings", icon: "⚙", name: "Settings", description: "Configure GamingOS" },
-        { id: "calculator", icon: "＋", name: "Calculator", description: "Perform calculations" },
-        { id: "about", icon: "ⓘ", name: "About GamingOS", description: "System information" }
+    const applications = [
+        { id: "browser", name: "Web Browser", icon: "🌐", description: "Browse websites" },
+        { id: "files", name: "Files", icon: "📁", description: "Browse folders" },
+        { id: "terminal", name: "Terminal", icon: "▣", description: "Command line" },
+        { id: "notes", name: "Text Editor", icon: "📝", description: "Write notes" },
+        { id: "settings", name: "Settings", icon: "⚙", description: "Configure GamingOS" },
+        { id: "calculator", name: "Calculator", icon: "▦", description: "Perform calculations" },
+        { id: "about", name: "About GamingOS", icon: "ⓘ", description: "System information" }
     ];
 
-    let windowZ = 20;
-    let windowCount = 0;
+    let highestZ = 100;
     let activeWindow = null;
     let overviewOpen = false;
     let systemPanelOpen = false;
@@ -53,14 +42,10 @@
             try {
                 localStorage.setItem("gamingos-" + key, value);
             } catch (error) {
-                console.warn("GamingOS storage unavailable:", error);
+                console.warn("Could not save setting:", error);
             }
         }
     };
-
-    // =========================================================
-    // UTILITIES
-    // =========================================================
 
     function escapeHTML(value) {
         return String(value).replace(/[&<>"']/g, character => ({
@@ -72,73 +57,29 @@
         })[character]);
     }
 
+    function appInfo(id) {
+        return applications.find(app => app.id === id);
+    }
+
     function notify(message) {
         const toast = $("#toast");
-
-        if (!toast) {
-            console.info("GamingOS:", message);
-            return;
-        }
+        if (!toast) return;
 
         toast.textContent = message;
         toast.classList.add("show");
 
         clearTimeout(notify.timer);
-
         notify.timer = setTimeout(() => {
             toast.classList.remove("show");
         }, 2200);
     }
 
-    function getApp(id) {
-        return apps.find(app => app.id === id);
-    }
-
-    function closeOverview() {
-        overviewOpen = false;
-
-        if (overview) {
-            overview.classList.add("hidden");
-        }
-    }
-
-    function closeSystemPanel() {
-        systemPanelOpen = false;
-
-        const panel = $("#systemPanel");
-
-        if (panel) {
-            panel.classList.add("hidden");
-        }
-    }
-
-    function toggleOverview() {
-        if (!overview) return;
-
-        overviewOpen = !overviewOpen;
-        overview.classList.toggle("hidden", !overviewOpen);
-
-        closeSystemPanel();
-
-        if (overviewOpen) {
-            renderOverview();
-
-            const search = $("#searchApps");
-
-            if (search) {
-                search.value = "";
-                search.focus();
-            }
-        }
-    }
-
-    // =========================================================
+    // ---------------------------------------------------------
     // CLOCK
-    // =========================================================
+    // ---------------------------------------------------------
 
     function updateClock() {
         const clock = $("#clock");
-
         if (!clock) return;
 
         const now = new Date();
@@ -160,11 +101,429 @@
     updateClock();
     setInterval(updateClock, 1000);
 
-    // =========================================================
-    // APPLICATION CONTENT
-    // =========================================================
+    // ---------------------------------------------------------
+    // OVERVIEW
+    // ---------------------------------------------------------
 
-    function contentFor(id) {
+    function openOverview() {
+        const overview = $("#overview");
+        if (!overview) return;
+
+        overviewOpen = true;
+        overview.classList.remove("hidden");
+
+        closeSystemPanel();
+        renderOverview();
+
+        const search = $("#searchApps");
+        if (search) {
+            search.value = "";
+            renderApplications("");
+            search.focus();
+        }
+    }
+
+    function closeOverview() {
+        overviewOpen = false;
+        $("#overview")?.classList.add("hidden");
+    }
+
+    function toggleOverview() {
+        if (overviewOpen) {
+            closeOverview();
+        } else {
+            openOverview();
+        }
+    }
+
+    function renderApplications(query = "") {
+        const grid = $("#appGrid");
+        if (!grid) return;
+
+        const search = query.trim().toLowerCase();
+
+        const results = applications.filter(app =>
+            app.name.toLowerCase().includes(search) ||
+            app.description.toLowerCase().includes(search)
+        );
+
+        grid.innerHTML = "";
+
+        results.forEach(app => {
+            const button = document.createElement("button");
+            button.className = "app-launcher";
+
+            button.innerHTML = `
+                <span class="app-launcher-icon">${app.icon}</span>
+                <span class="app-launcher-name">${escapeHTML(app.name)}</span>
+            `;
+
+            button.addEventListener("click", () => {
+                launchApp(app.id);
+            });
+
+            grid.appendChild(button);
+        });
+
+        if (!results.length) {
+            const empty = document.createElement("p");
+            empty.className = "no-apps";
+            empty.textContent = "No applications found";
+            grid.appendChild(empty);
+        }
+    }
+
+    function renderOverview() {
+        renderApplications();
+
+        const running = $("#runningApps");
+        if (!running) return;
+
+        running.innerHTML = "";
+
+        $$(".window", workspace).forEach(win => {
+            const app = appInfo(win.dataset.app);
+            if (!app) return;
+
+            const button = document.createElement("button");
+            button.className = "running-app";
+            button.textContent = app.icon + " " + app.name;
+
+            button.addEventListener("click", () => {
+                restoreWindow(win);
+                closeOverview();
+            });
+
+            running.appendChild(button);
+        });
+    }
+
+    $("#activities")?.addEventListener("click", toggleOverview);
+    $("#showApps")?.addEventListener("click", toggleOverview);
+
+    $("#searchApps")?.addEventListener("input", event => {
+        renderApplications(event.target.value);
+    });
+
+    // ---------------------------------------------------------
+    // SYSTEM MENU
+    // ---------------------------------------------------------
+
+    function closeSystemPanel() {
+        systemPanelOpen = false;
+        $("#systemPanel")?.classList.add("hidden");
+    }
+
+    $("#systemButton")?.addEventListener("click", () => {
+        const panel = $("#systemPanel");
+        if (!panel) return;
+
+        systemPanelOpen = !systemPanelOpen;
+        panel.classList.toggle("hidden", !systemPanelOpen);
+
+        closeOverview();
+    });
+
+    $$(".quick-toggle").forEach(button => {
+        button.addEventListener("click", () => {
+            const enabled = button.classList.toggle("active");
+            const name = button.dataset.toggle || "Setting";
+
+            notify(name.charAt(0).toUpperCase() + name.slice(1) +
+                (enabled ? " enabled" : " disabled"));
+        });
+    });
+
+    function setBrightness(value) {
+        const brightness = Math.max(50, Math.min(100, Number(value)));
+        desktop.style.filter = `brightness(${brightness}%)`;
+
+        const slider = $("#brightness");
+        if (slider) slider.value = brightness;
+
+        storage.set("brightness", String(brightness));
+    }
+
+    $("#brightness")?.addEventListener("input", event => {
+        setBrightness(event.target.value);
+    });
+
+    $("#openSettings")?.addEventListener("click", () => {
+        closeSystemPanel();
+        launchApp("settings");
+    });
+
+    $("#shutdown")?.addEventListener("click", () => {
+        if (!confirm("Power off GamingOS?")) return;
+
+        $$(".window", workspace).forEach(win => win.remove());
+
+        closeOverview();
+        closeSystemPanel();
+
+        desktop.classList.add("hidden");
+        boot?.classList.remove("hidden");
+
+        notify("GamingOS powered off");
+    });
+
+    // ---------------------------------------------------------
+    // WINDOW MANAGEMENT
+    // ---------------------------------------------------------
+
+    function focusWindow(win) {
+        if (!win) return;
+
+        $$(".window", workspace).forEach(item => {
+            item.classList.remove("focused");
+        });
+
+        win.classList.add("focused");
+        win.style.zIndex = ++highestZ;
+        activeWindow = win;
+
+        updateDock();
+    }
+
+    function restoreWindow(win) {
+        if (!win) return;
+
+        win.classList.remove("minimized");
+        win.style.display = "flex";
+        win.dataset.minimized = "false";
+
+        focusWindow(win);
+    }
+
+    function launchApp(id) {
+        const app = appInfo(id);
+        if (!app) return;
+
+        closeOverview();
+        closeSystemPanel();
+
+        const existing = $$(".window", workspace).find(win =>
+            win.dataset.app === id
+        );
+
+        if (existing) {
+            restoreWindow(existing);
+            return;
+        }
+
+        createWindow(app);
+    }
+
+    function createWindow(app) {
+        const win = document.createElement("section");
+
+        win.className = "window focused";
+        win.dataset.app = app.id;
+        win.dataset.minimized = "false";
+        win.dataset.maximized = "false";
+
+        const width = Math.min(850, window.innerWidth - 40);
+        const height = Math.min(590, window.innerHeight - 110);
+
+        win.style.width = Math.max(320, width) + "px";
+        win.style.height = Math.max(250, height) + "px";
+        win.style.left = Math.max(10, (window.innerWidth - width) / 2) + "px";
+        win.style.top = Math.max(45, (window.innerHeight - height) / 2) + "px";
+        win.style.zIndex = ++highestZ;
+
+        win.innerHTML = `
+            <header class="window-header">
+                <div class="window-title">
+                    <span class="window-icon">${app.icon}</span>
+                    <span>${escapeHTML(app.name)}</span>
+                </div>
+
+                <div class="window-controls">
+                    <button class="window-minimize" title="Minimize">−</button>
+                    <button class="window-maximize" title="Maximize">□</button>
+                    <button class="window-close" title="Close">×</button>
+                </div>
+            </header>
+
+            <div class="window-content">
+                ${getApplicationHTML(app.id)}
+            </div>
+        `;
+
+        workspace.appendChild(win);
+
+        setupWindow(win);
+        setupApplication(win, app.id);
+        focusWindow(win);
+        updateDock();
+
+        return win;
+    }
+
+    function setupWindow(win) {
+        const header = $(".window-header", win);
+        const close = $(".window-close", win);
+        const minimize = $(".window-minimize", win);
+        const maximize = $(".window-maximize", win);
+
+        win.addEventListener("pointerdown", () => focusWindow(win));
+
+        close?.addEventListener("click", event => {
+            event.stopPropagation();
+
+            win.remove();
+
+            if (activeWindow === win) {
+                activeWindow = null;
+            }
+
+            updateDock();
+        });
+
+        minimize?.addEventListener("click", event => {
+            event.stopPropagation();
+
+            win.classList.add("minimized");
+            win.style.display = "none";
+            win.dataset.minimized = "true";
+
+            if (activeWindow === win) {
+                activeWindow = null;
+            }
+
+            updateDock();
+        });
+
+        maximize?.addEventListener("click", event => {
+            event.stopPropagation();
+            toggleMaximize(win);
+        });
+
+        header?.addEventListener("dblclick", event => {
+            if (!event.target.closest(".window-controls")) {
+                toggleMaximize(win);
+            }
+        });
+
+        // Dragging
+        if (header) {
+            let dragging = false;
+            let startX = 0;
+            let startY = 0;
+            let originalX = 0;
+            let originalY = 0;
+
+            header.addEventListener("pointerdown", event => {
+                if (event.target.closest(".window-controls")) return;
+                if (win.dataset.maximized === "true") return;
+                if (event.button !== 0) return;
+
+                dragging = true;
+
+                startX = event.clientX;
+                startY = event.clientY;
+                originalX = win.offsetLeft;
+                originalY = win.offsetTop;
+
+                header.setPointerCapture(event.pointerId);
+                focusWindow(win);
+            });
+
+            header.addEventListener("pointermove", event => {
+                if (!dragging) return;
+
+                const x = originalX + event.clientX - startX;
+                const y = originalY + event.clientY - startY;
+
+                win.style.left = Math.max(
+                    0,
+                    Math.min(window.innerWidth - 100, x)
+                ) + "px";
+
+                win.style.top = Math.max(
+                    32,
+                    Math.min(window.innerHeight - 80, y)
+                ) + "px";
+            });
+
+            header.addEventListener("pointerup", () => {
+                dragging = false;
+            });
+
+            header.addEventListener("pointercancel", () => {
+                dragging = false;
+            });
+        }
+    }
+
+    function toggleMaximize(win) {
+        if (win.dataset.maximized === "true") {
+            win.dataset.maximized = "false";
+
+            win.style.left = win.dataset.previousLeft;
+            win.style.top = win.dataset.previousTop;
+            win.style.width = win.dataset.previousWidth;
+            win.style.height = win.dataset.previousHeight;
+
+            win.classList.remove("maximized");
+        } else {
+            win.dataset.previousLeft = win.style.left;
+            win.dataset.previousTop = win.style.top;
+            win.dataset.previousWidth = win.style.width;
+            win.dataset.previousHeight = win.style.height;
+
+            win.dataset.maximized = "true";
+            win.classList.add("maximized");
+
+            win.style.left = "0";
+            win.style.top = "32px";
+            win.style.width = "100%";
+            win.style.height = "calc(100% - 32px)";
+        }
+
+        focusWindow(win);
+    }
+
+    // ---------------------------------------------------------
+    // DOCK
+    // ---------------------------------------------------------
+
+    function updateDock() {
+        $$(".dock-app").forEach(button => {
+            const open = $$(".window", workspace).some(win =>
+                win.dataset.app === button.dataset.app
+            );
+
+            button.classList.toggle("running", open);
+        });
+    }
+
+    $$(".dock-app").forEach(button => {
+        button.addEventListener("click", () => {
+            const id = button.dataset.app;
+            const existing = $$(".window", workspace).find(win =>
+                win.dataset.app === id
+            );
+
+            if (existing && existing === activeWindow &&
+                existing.dataset.minimized !== "true") {
+                existing.style.display = "none";
+                existing.dataset.minimized = "true";
+                existing.classList.add("minimized");
+                activeWindow = null;
+                updateDock();
+                return;
+            }
+
+            launchApp(id);
+        });
+    });
+
+    // ---------------------------------------------------------
+    // APPLICATION CONTENT
+    // ---------------------------------------------------------
+
+    function getApplicationHTML(id) {
         switch (id) {
             case "browser":
                 return `
@@ -173,64 +532,49 @@
                             <button class="browser-back" title="Back">←</button>
                             <button class="browser-forward" title="Forward">→</button>
                             <button class="browser-reload" title="Reload">↻</button>
-                            <input
-                                class="browser-address"
-                                type="text"
+                            <input class="browser-address"
                                 value="https://example.com"
-                                placeholder="Search or enter address"
-                            >
+                                placeholder="Search or enter address">
                             <button class="browser-go">Go</button>
                         </div>
-                        <iframe
-                            class="browser-frame"
+                        <iframe class="browser-frame"
                             src="https://example.com"
                             title="Web Browser"
-                            referrerpolicy="no-referrer"
-                        ></iframe>
+                            referrerpolicy="no-referrer"></iframe>
                     </div>
                 `;
 
             case "files":
                 return `
                     <div class="files-app">
-                        <div class="files-sidebar">
+                        <aside class="files-sidebar">
                             <button class="file-location active" data-location="Home">⌂ Home</button>
                             <button class="file-location" data-location="Desktop">▦ Desktop</button>
                             <button class="file-location" data-location="Documents">▤ Documents</button>
                             <button class="file-location" data-location="Downloads">↓ Downloads</button>
                             <button class="file-location" data-location="Pictures">▧ Pictures</button>
                             <button class="file-location" data-location="Music">♫ Music</button>
-                        </div>
+                        </aside>
+
                         <div class="files-main">
                             <div class="files-heading">Home</div>
                             <div class="files-grid">
-                                <button class="file-item" data-folder="Desktop">
-                                    <span>🖥️</span>
-                                    <span>Desktop</span>
-                                </button>
-                                <button class="file-item" data-folder="Documents">
-                                    <span>📄</span>
-                                    <span>Documents</span>
-                                </button>
-                                <button class="file-item" data-folder="Downloads">
-                                    <span>📥</span>
-                                    <span>Downloads</span>
-                                </button>
-                                <button class="file-item" data-folder="Pictures">
-                                    <span>🖼️</span>
-                                    <span>Pictures</span>
-                                </button>
-                                <button class="file-item" data-folder="Music">
-                                    <span>🎵</span>
-                                    <span>Music</span>
-                                </button>
-                                <button class="file-item" data-folder="Videos">
-                                    <span>🎬</span>
-                                    <span>Videos</span>
-                                </button>
+                                ${[
+                                    ["Desktop", "🖥️"],
+                                    ["Documents", "📄"],
+                                    ["Downloads", "📥"],
+                                    ["Pictures", "🖼️"],
+                                    ["Music", "🎵"],
+                                    ["Videos", "🎬"]
+                                ].map(([name, icon]) => `
+                                    <button class="file-item" data-folder="${name}">
+                                        <span>${icon}</span>
+                                        <span>${name}</span>
+                                    </button>
+                                `).join("")}
                             </div>
                             <p class="files-notice">
-                                This is a simulated file manager. It cannot access your actual device files.
+                                Simulated file manager. Actual device files are not accessible.
                             </p>
                         </div>
                     </div>
@@ -242,17 +586,13 @@
                         <div class="terminal-output">
                             <div>GamingOS Terminal</div>
                             <div>Browser-based desktop environment</div>
-                            <div>Type <span class="terminal-highlight">help</span> for available commands.</div>
+                            <div>Type <span class="terminal-highlight">help</span> for commands.</div>
                             <br>
                         </div>
                         <form class="terminal-form">
                             <span class="terminal-prompt">user@gamingos:~$</span>
-                            <input
-                                class="terminal-input"
-                                autocomplete="off"
-                                spellcheck="false"
-                                aria-label="Terminal command"
-                            >
+                            <input class="terminal-input" autocomplete="off"
+                                spellcheck="false" aria-label="Terminal command">
                         </form>
                     </div>
                 `;
@@ -264,11 +604,9 @@
                             <span>Text Editor</span>
                             <button class="notes-clear">Clear</button>
                         </div>
-                        <textarea
-                            class="notes-content"
+                        <textarea class="notes-content"
                             placeholder="Start writing..."
-                            spellcheck="false"
-                        ></textarea>
+                            spellcheck="false"></textarea>
                         <div class="notes-status">Saved locally</div>
                     </div>
                 `;
@@ -281,38 +619,36 @@
                             <button class="settings-tab" data-tab="display">▣ Display</button>
                             <button class="settings-tab" data-tab="about">ⓘ About</button>
                         </aside>
+
                         <div class="settings-content">
                             <section class="settings-page" data-page="appearance">
                                 <h3>Appearance</h3>
-                                <p>Choose your desktop appearance.</p>
+                                <p>Customize your desktop.</p>
+
                                 <div class="setting-row">
                                     <div>
                                         <strong>Dark mode</strong>
                                         <p>Use a dark desktop theme.</p>
                                     </div>
-                                    <input type="checkbox" class="theme-toggle" checked>
+                                    <input type="checkbox" class="theme-toggle">
                                 </div>
+
                                 <div class="setting-row">
                                     <div>
-                                        <strong>Desktop animations</strong>
+                                        <strong>Animations</strong>
                                         <p>Enable interface transitions.</p>
                                     </div>
-                                    <input type="checkbox" class="animation-toggle" checked>
+                                    <input type="checkbox" class="animation-toggle">
                                 </div>
                             </section>
 
                             <section class="settings-page hidden" data-page="display">
                                 <h3>Display</h3>
-                                <p>Adjust the desktop brightness.</p>
+                                <p>Adjust screen brightness.</p>
                                 <div class="setting-row">
                                     <strong>Brightness</strong>
-                                    <input
-                                        type="range"
-                                        class="settings-brightness"
-                                        min="40"
-                                        max="100"
-                                        value="100"
-                                    >
+                                    <input class="settings-brightness"
+                                        type="range" min="50" max="100" value="100">
                                 </div>
                             </section>
 
@@ -320,7 +656,7 @@
                                 <h3>About GamingOS</h3>
                                 <p>GamingOS is a browser-based desktop environment.</p>
                                 <p>Version 1.0</p>
-                                <p>Designed for desktop browsers.</p>
+                                <p>GNOME-inspired interface</p>
                             </section>
                         </div>
                     </div>
@@ -329,12 +665,9 @@
             case "calculator":
                 return `
                     <div class="calculator-app">
-                        <input
-                            class="calculator-display"
-                            value="0"
-                            readonly
-                            aria-label="Calculator display"
-                        >
+                        <input class="calculator-display" value="0" readonly
+                            aria-label="Calculator display">
+
                         <div class="calculator-buttons">
                             <button data-calc="clear">C</button>
                             <button data-calc="(">(</button>
@@ -367,7 +700,7 @@
             case "about":
                 return `
                     <div class="about-app">
-                        <div class="about-icon">◈</div>
+                        <div class="about-icon">g</div>
                         <h2>GamingOS</h2>
                         <p class="about-subtitle">A desktop experience in your browser.</p>
                         <div class="about-details">
@@ -380,243 +713,22 @@
                 `;
 
             default:
-                return `<p>Application not found.</p>`;
+                return "<p>Application not found.</p>";
         }
     }
 
-    // =========================================================
-    // WINDOW MANAGEMENT
-    // =========================================================
-
-    function focusWindow(win) {
-        if (!win) return;
-
-        $$(".window", workspace).forEach(window => {
-            window.classList.remove("focused");
-        });
-
-        win.classList.add("focused");
-        win.style.zIndex = ++windowZ;
-        activeWindow = win;
-
-        updateDock();
-    }
-
-    function createWindow(id) {
-        const app = getApp(id);
-
-        if (!app) {
-            notify("Application not found");
-            return;
-        }
-
-        closeOverview();
-        closeSystemPanel();
-
-        const existing = $$(".window", workspace).find(win =>
-            win.dataset.app === id && win.dataset.minimized !== "true"
-        );
-
-        if (existing) {
-            focusWindow(existing);
-            return existing;
-        }
-
-        const minimized = $$(".window", workspace).find(win =>
-            win.dataset.app === id && win.dataset.minimized === "true"
-        );
-
-        if (minimized) {
-            minimized.dataset.minimized = "false";
-            minimized.classList.remove("minimized");
-            minimized.style.display = "";
-            focusWindow(minimized);
-            return minimized;
-        }
-
-        windowCount++;
-
-        const win = document.createElement("section");
-
-        win.className = "window";
-        win.dataset.app = id;
-        win.dataset.minimized = "false";
-
-        const width = Math.min(850, Math.max(360, window.innerWidth * 0.65));
-        const height = Math.min(600, Math.max(300, window.innerHeight * 0.65));
-
-        win.style.width = width + "px";
-        win.style.height = height + "px";
-        win.style.left = Math.max(20, (window.innerWidth - width) / 2) + "px";
-        win.style.top = Math.max(55, (window.innerHeight - height) / 2) + "px";
-        win.style.zIndex = ++windowZ;
-
-        win.innerHTML = `
-            <header class="window-header">
-                <div class="window-title">
-                    <span class="window-icon">${app.icon}</span>
-                    <span>${escapeHTML(app.name)}</span>
-                </div>
-                <div class="window-controls">
-                    <button class="window-minimize" title="Minimize">−</button>
-                    <button class="window-maximize" title="Maximize">□</button>
-                    <button class="window-close" title="Close">×</button>
-                </div>
-            </header>
-            <div class="window-content">
-                ${contentFor(id)}
-            </div>
-        `;
-
-        workspace.appendChild(win);
-
-        setupWindow(win);
-        setupApp(win, id);
-        focusWindow(win);
-        updateDock();
-
-        return win;
-    }
-
-    function setupWindow(win) {
-        const header = $(".window-header", win);
-        const minimize = $(".window-minimize", win);
-        const maximize = $(".window-maximize", win);
-        const close = $(".window-close", win);
-
-        win.addEventListener("pointerdown", () => focusWindow(win));
-
-        if (close) {
-            close.addEventListener("click", event => {
-                event.stopPropagation();
-                win.remove();
-
-                if (activeWindow === win) {
-                    activeWindow = null;
-                }
-
-                updateDock();
-            });
-        }
-
-        if (minimize) {
-            minimize.addEventListener("click", event => {
-                event.stopPropagation();
-
-                win.dataset.minimized = "true";
-                win.classList.add("minimized");
-                win.style.display = "none";
-
-                if (activeWindow === win) {
-                    activeWindow = null;
-                }
-
-                updateDock();
-            });
-        }
-
-        if (maximize) {
-            maximize.addEventListener("click", event => {
-                event.stopPropagation();
-
-                if (win.dataset.maximized === "true") {
-                    win.dataset.maximized = "false";
-                    win.style.left = win.dataset.oldLeft || "100px";
-                    win.style.top = win.dataset.oldTop || "100px";
-                    win.style.width = win.dataset.oldWidth || "700px";
-                    win.style.height = win.dataset.oldHeight || "500px";
-                    win.classList.remove("maximized");
-                } else {
-                    win.dataset.oldLeft = win.style.left;
-                    win.dataset.oldTop = win.style.top;
-                    win.dataset.oldWidth = win.style.width;
-                    win.dataset.oldHeight = win.style.height;
-
-                    win.dataset.maximized = "true";
-                    win.classList.add("maximized");
-
-                    win.style.left = "0";
-                    win.style.top = "32px";
-                    win.style.width = "100%";
-                    win.style.height = "calc(100% - 32px)";
-                }
-
-                focusWindow(win);
-            });
-        }
-
-        if (header) {
-            let dragging = false;
-            let startX = 0;
-            let startY = 0;
-            let originalX = 0;
-            let originalY = 0;
-
-            header.addEventListener("pointerdown", event => {
-                if (event.target.closest(".window-controls")) return;
-                if (win.dataset.maximized === "true") return;
-
-                dragging = true;
-
-                startX = event.clientX;
-                startY = event.clientY;
-                originalX = win.offsetLeft;
-                originalY = win.offsetTop;
-
-                header.setPointerCapture(event.pointerId);
-                focusWindow(win);
-            });
-
-            header.addEventListener("pointermove", event => {
-                if (!dragging) return;
-
-                const x = originalX + event.clientX - startX;
-                const y = originalY + event.clientY - startY;
-
-                win.style.left = Math.max(
-                    -win.offsetWidth + 100,
-                    Math.min(window.innerWidth - 100, x)
-                ) + "px";
-
-                win.style.top = Math.max(
-                    32,
-                    Math.min(window.innerHeight - 80, y)
-                ) + "px";
-            });
-
-            header.addEventListener("pointerup", () => {
-                dragging = false;
-            });
-
-            header.addEventListener("pointercancel", () => {
-                dragging = false;
-            });
-
-            header.addEventListener("dblclick", event => {
-                if (!event.target.closest(".window-controls") && maximize) {
-                    maximize.click();
-                }
-            });
-        }
-    }
-
-    // =========================================================
-    // BROWSER APP
-    // =========================================================
+    // ---------------------------------------------------------
+    // BROWSER
+    // ---------------------------------------------------------
 
     function setupBrowser(win) {
         const address = $(".browser-address", win);
         const frame = $(".browser-frame", win);
-        const go = $(".browser-go", win);
-        const back = $(".browser-back", win);
-        const forward = $(".browser-forward", win);
-        const reload = $(".browser-reload", win);
 
         if (!address || !frame) return;
 
         function navigate() {
             let value = address.value.trim();
-
             if (!value) return;
 
             if (!/^https?:\/\//i.test(value)) {
@@ -629,54 +741,50 @@
             }
 
             try {
-                const parsed = new URL(value);
+                const url = new URL(value);
 
-                if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+                if (!["http:", "https:"].includes(url.protocol)) {
                     notify("Unsupported address");
                     return;
                 }
 
-                address.value = parsed.href;
-                frame.src = parsed.href;
+                address.value = url.href;
+                frame.src = url.href;
             } catch {
                 notify("Invalid address");
             }
         }
 
-        go?.addEventListener("click", navigate);
+        $(".browser-go", win)?.addEventListener("click", navigate);
 
         address.addEventListener("keydown", event => {
             if (event.key === "Enter") navigate();
         });
 
-        reload?.addEventListener("click", () => {
-            try {
-                frame.contentWindow.location.reload();
-            } catch {
-                frame.src = frame.src;
-            }
+        $(".browser-reload", win)?.addEventListener("click", () => {
+            frame.src = frame.src;
         });
 
-        back?.addEventListener("click", () => {
+        $(".browser-back", win)?.addEventListener("click", () => {
             try {
                 frame.contentWindow.history.back();
             } catch {
-                notify("This page does not allow browser navigation");
+                notify("This page blocks browser navigation");
             }
         });
 
-        forward?.addEventListener("click", () => {
+        $(".browser-forward", win)?.addEventListener("click", () => {
             try {
                 frame.contentWindow.history.forward();
             } catch {
-                notify("This page does not allow browser navigation");
+                notify("This page blocks browser navigation");
             }
         });
     }
 
-    // =========================================================
-    // FILES APP
-    // =========================================================
+    // ---------------------------------------------------------
+    // FILES
+    // ---------------------------------------------------------
 
     function setupFiles(win) {
         const heading = $(".files-heading", win);
@@ -699,25 +807,23 @@
             button.addEventListener("click", () => {
                 const folder = button.dataset.folder;
 
-                if (heading) {
-                    heading.textContent = folder;
-                }
+                if (heading) heading.textContent = folder;
 
-                $$(".file-location", win).forEach(item =>
+                $$(".file-location", win).forEach(item => {
                     item.classList.toggle(
                         "active",
                         item.dataset.location === folder
-                    )
-                );
+                    );
+                });
 
                 notify(folder + " is empty");
             });
         });
     }
 
-    // =========================================================
-    // TERMINAL APP
-    // =========================================================
+    // ---------------------------------------------------------
+    // TERMINAL
+    // ---------------------------------------------------------
 
     function setupTerminal(win) {
         const form = $(".terminal-form", win);
@@ -726,35 +832,35 @@
 
         if (!form || !input || !output) return;
 
-        function writeLine(value = "") {
+        function print(value = "") {
             const line = document.createElement("div");
             line.textContent = value;
             output.appendChild(line);
         }
 
         function execute(command) {
-            const args = command.trim().split(/\s+/);
-            const cmd = (args.shift() || "").toLowerCase();
+            const parts = command.trim().split(/\s+/);
+            const cmd = (parts.shift() || "").toLowerCase();
 
             switch (cmd) {
                 case "":
                     break;
 
                 case "help":
-                    writeLine("Available commands:");
-                    writeLine("help       - Show available commands");
-                    writeLine("clear      - Clear the terminal");
-                    writeLine("date       - Show the current date");
-                    writeLine("time       - Show the current time");
-                    writeLine("whoami     - Show current user");
-                    writeLine("hostname   - Show system name");
-                    writeLine("uname      - Show environment information");
-                    writeLine("ls         - List simulated files");
-                    writeLine("pwd        - Show current directory");
-                    writeLine("echo       - Print text");
-                    writeLine("neofetch   - Show GamingOS information");
-                    writeLine("about      - About GamingOS");
-                    writeLine("exit       - Close terminal");
+                    print("Available commands:");
+                    print("help       Show commands");
+                    print("clear      Clear terminal");
+                    print("date       Show date");
+                    print("time       Show time");
+                    print("whoami     Current user");
+                    print("hostname   System name");
+                    print("uname      Environment information");
+                    print("ls         List simulated files");
+                    print("pwd        Current directory");
+                    print("echo       Print text");
+                    print("neofetch   System information");
+                    print("about      About GamingOS");
+                    print("exit       Close terminal");
                     break;
 
                 case "clear":
@@ -762,59 +868,60 @@
                     break;
 
                 case "date":
-                    writeLine(new Date().toDateString());
+                    print(new Date().toDateString());
                     break;
 
                 case "time":
-                    writeLine(new Date().toLocaleTimeString());
+                    print(new Date().toLocaleTimeString());
                     break;
 
                 case "whoami":
-                    writeLine("user");
+                    print("user");
                     break;
 
                 case "hostname":
-                    writeLine("gamingos");
+                    print("gamingos");
                     break;
 
                 case "uname":
-                    writeLine("GamingOS Browser Desktop");
+                    print("GamingOS Browser Desktop");
                     break;
 
                 case "pwd":
-                    writeLine("/home/user");
+                    print("/home/user");
                     break;
 
                 case "ls":
-                    writeLine("Desktop  Documents  Downloads  Pictures  Music  Videos");
+                    print("Desktop  Documents  Downloads  Pictures  Music  Videos");
                     break;
 
                 case "echo":
-                    writeLine(args.join(" "));
+                    print(parts.join(" "));
                     break;
 
                 case "neofetch":
-                    writeLine("       .--.       user@gamingos");
-                    writeLine("      |o_o |      ----------------");
-                    writeLine("      |:_/ |      OS: GamingOS");
-                    writeLine("     //   \\ \\     Version: 1.0");
-                    writeLine("    (|     | )    Shell: GamingOS Terminal");
-                    writeLine("   /'\\_   _/`\\    Platform: Browser");
-                    writeLine("   \\___)=(___/    Desktop: GNOME-inspired");
+                    print("       .--.       user@gamingos");
+                    print("      |o_o |      ----------------");
+                    print("      |:_/ |      OS: GamingOS");
+                    print("     //   \\ \\     Version: 1.0");
+                    print("    (|     | )    Shell: GamingOS Terminal");
+                    print("   /'\\_   _/`\\    Platform: Browser");
+                    print("   \\___)=(___/    Desktop: GNOME-inspired");
                     break;
 
                 case "about":
-                    writeLine("GamingOS 1.0 - A browser-based desktop environment.");
+                    print("GamingOS 1.0 - Browser-based desktop environment.");
                     break;
 
                 case "exit":
                     win.remove();
+                    activeWindow = null;
                     updateDock();
                     break;
 
                 default:
-                    writeLine("Command not found: " + cmd);
-                    writeLine("Type 'help' to see available commands.");
+                    print("Command not found: " + cmd);
+                    print("Type 'help' for available commands.");
             }
 
             output.scrollTop = output.scrollHeight;
@@ -824,10 +931,9 @@
             event.preventDefault();
 
             const command = input.value;
+            print("user@gamingos:~$ " + command);
 
-            writeLine("user@gamingos:~$ " + command);
             execute(command);
-
             input.value = "";
             output.scrollTop = output.scrollHeight;
         });
@@ -835,9 +941,9 @@
         input.focus();
     }
 
-    // =========================================================
-    // NOTES APP
-    // =========================================================
+    // ---------------------------------------------------------
+    // NOTES
+    // ---------------------------------------------------------
 
     function setupNotes(win) {
         const editor = $(".notes-content", win);
@@ -850,27 +956,21 @@
 
         editor.addEventListener("input", () => {
             storage.set("notes", editor.value);
-
-            if (status) {
-                status.textContent = "Saved locally";
-            }
+            if (status) status.textContent = "Saved locally";
         });
 
         clear?.addEventListener("click", () => {
             editor.value = "";
             storage.set("notes", "");
 
-            if (status) {
-                status.textContent = "Cleared";
-            }
-
+            if (status) status.textContent = "Cleared";
             notify("Notes cleared");
         });
     }
 
-    // =========================================================
-    // SETTINGS APP
-    // =========================================================
+    // ---------------------------------------------------------
+    // SETTINGS
+    // ---------------------------------------------------------
 
     function setupSettings(win) {
         const tabs = $$(".settings-tab", win);
@@ -890,31 +990,31 @@
             });
         });
 
-        const themeToggle = $(".theme-toggle", win);
-        const animationToggle = $(".animation-toggle", win);
+        const theme = $(".theme-toggle", win);
+        const animations = $(".animation-toggle", win);
         const brightness = $(".settings-brightness", win);
 
-        if (themeToggle) {
-            themeToggle.checked = storage.get("light-theme", "false") !== "true";
+        if (theme) {
+            theme.checked = storage.get("light-theme", "false") !== "true";
 
-            themeToggle.addEventListener("change", () => {
-                const light = !themeToggle.checked;
+            theme.addEventListener("change", () => {
+                const light = !theme.checked;
 
                 document.body.classList.toggle("light-theme", light);
                 storage.set("light-theme", String(light));
             });
         }
 
-        if (animationToggle) {
-            animationToggle.checked = storage.get("animations", "true") !== "false";
+        if (animations) {
+            animations.checked = storage.get("animations", "true") !== "false";
 
-            animationToggle.addEventListener("change", () => {
+            animations.addEventListener("change", () => {
                 document.body.classList.toggle(
                     "no-animations",
-                    !animationToggle.checked
+                    !animations.checked
                 );
 
-                storage.set("animations", String(animationToggle.checked));
+                storage.set("animations", String(animations.checked));
             });
         }
 
@@ -927,25 +1027,24 @@
         }
     }
 
-    // =========================================================
-    // CALCULATOR APP
-    // =========================================================
+    // ---------------------------------------------------------
+    // CALCULATOR
+    // ---------------------------------------------------------
 
     function setupCalculator(win) {
         const display = $(".calculator-display", win);
-
         if (!display) return;
 
         let expression = "";
 
-        function updateDisplay() {
+        function update() {
             display.value = expression || "0";
         }
 
         function calculate() {
             if (!expression) return;
 
-            // Only allow numbers and arithmetic operators.
+            // The allowlist prevents letters, property access, and arbitrary code.
             if (!/^[0-9+\-*/().\s]+$/.test(expression)) {
                 display.value = "Error";
                 expression = "";
@@ -953,16 +1052,16 @@
             }
 
             try {
-                // Arithmetic-only parser using JavaScript's expression evaluator.
-                // The strict character allowlist prevents arbitrary code input.
-                const result = Function('"use strict"; return (' + expression + ')')();
+                const result = Function(
+                    '"use strict"; return (' + expression + ')'
+                )();
 
                 if (!Number.isFinite(result)) {
                     throw new Error("Invalid result");
                 }
 
                 expression = String(Number(result.toFixed(10)));
-                updateDisplay();
+                update();
             } catch {
                 display.value = "Error";
                 expression = "";
@@ -984,16 +1083,16 @@
                     expression += value;
                 }
 
-                updateDisplay();
+                update();
             });
         });
     }
 
-    // =========================================================
-    // APP INITIALIZATION
-    // =========================================================
+    // ---------------------------------------------------------
+    // INITIALIZE APPS
+    // ---------------------------------------------------------
 
-    function setupApp(win, id) {
+    function setupApplication(win, id) {
         switch (id) {
             case "browser":
                 setupBrowser(win);
@@ -1021,186 +1120,15 @@
         }
     }
 
-    // =========================================================
-    // APPLICATION GRID
-    // =========================================================
-
-    function renderApps(query = "") {
-        const grid = $("#appGrid");
-
-        if (!grid) return;
-
-        const filtered = apps.filter(app =>
-            app.name.toLowerCase().includes(query.toLowerCase()) ||
-            app.description.toLowerCase().includes(query.toLowerCase())
-        );
-
-        grid.innerHTML = "";
-
-        filtered.forEach(app => {
-            const button = document.createElement("button");
-
-            button.className = "app-launcher";
-            button.innerHTML = `
-                <span class="app-launcher-icon">${app.icon}</span>
-                <span class="app-launcher-name">${escapeHTML(app.name)}</span>
-            `;
-
-            button.addEventListener("click", () => {
-                createWindow(app.id);
-            });
-
-            grid.appendChild(button);
-        });
-
-        if (filtered.length === 0) {
-            grid.innerHTML = `<p class="no-apps">No applications found.</p>`;
-        }
-    }
-
-    function renderOverview() {
-        renderApps();
-
-        const running = $("#runningApps");
-
-        if (!running) return;
-
-        running.innerHTML = "";
-
-        const openWindows = $$(".window", workspace);
-
-        openWindows.forEach(win => {
-            const app = getApp(win.dataset.app);
-
-            if (!app) return;
-
-            const button = document.createElement("button");
-
-            button.className = "running-app";
-            button.textContent = app.icon + " " + app.name;
-
-            button.addEventListener("click", () => {
-                win.dataset.minimized = "false";
-                win.classList.remove("minimized");
-                win.style.display = "";
-                focusWindow(win);
-                closeOverview();
-            });
-
-            running.appendChild(button);
-        });
-    }
-
-    // =========================================================
-    // DOCK
-    // =========================================================
-
-    function updateDock() {
-        $$(".dock-app").forEach(button => {
-            const id = button.dataset.app;
-
-            const isOpen = $$(".window", workspace).some(win =>
-                win.dataset.app === id
-            );
-
-            button.classList.toggle("running", isOpen);
-        });
-    }
-
-    // =========================================================
-    // BRIGHTNESS
-    // =========================================================
-
-    function setBrightness(value) {
-        const brightness = Math.max(40, Math.min(100, Number(value)));
-
-        desktop.style.filter = `brightness(${brightness}%)`;
-
-        storage.set("brightness", String(brightness));
-
-        const slider = $("#brightness");
-
-        if (slider) {
-            slider.value = String(brightness);
-        }
-    }
-
-    // =========================================================
-    // TOP BAR AND SYSTEM MENU
-    // =========================================================
-
-    $("#activities")?.addEventListener("click", toggleOverview);
-    $("#showApps")?.addEventListener("click", toggleOverview);
-
-    $("#searchApps")?.addEventListener("input", event => {
-        renderApps(event.target.value);
-    });
-
-    $("#systemButton")?.addEventListener("click", () => {
-        const panel = $("#systemPanel");
-
-        if (!panel) return;
-
-        systemPanelOpen = !systemPanelOpen;
-        panel.classList.toggle("hidden", !systemPanelOpen);
-
-        closeOverview();
-    });
-
-    $$(".dock-app").forEach(button => {
-        button.addEventListener("click", () => {
-            createWindow(button.dataset.app);
-        });
-    });
-
-    $$(".toggle").forEach(button => {
-        button.addEventListener("click", () => {
-            button.classList.toggle("active");
-
-            const label = button.dataset.label ||
-                button.textContent.trim() ||
-                "Setting";
-
-            notify(label + (button.classList.contains("active") ? " enabled" : " disabled"));
-        });
-    });
-
-    $("#brightness")?.addEventListener("input", event => {
-        setBrightness(event.target.value);
-    });
-
-    $("#openSettings")?.addEventListener("click", () => {
-        closeSystemPanel();
-        createWindow("settings");
-    });
-
-    $("#shutdown")?.addEventListener("click", () => {
-        const confirmed = window.confirm("Power off GamingOS?");
-
-        if (!confirmed) return;
-
-        $$(".window", workspace).forEach(win => win.remove());
-
-        closeOverview();
-        closeSystemPanel();
-
-        if (boot) {
-            boot.classList.remove("hidden");
-        }
-
-        desktop.classList.add("hidden");
-
-        notify("GamingOS powered off");
-    });
-
-    // =========================================================
+    // ---------------------------------------------------------
     // KEYBOARD SHORTCUTS
-    // =========================================================
+    // ---------------------------------------------------------
 
     document.addEventListener("keydown", event => {
         const target = event.target;
 
-        const typing = target instanceof HTMLInputElement ||
+        const typing =
+            target instanceof HTMLInputElement ||
             target instanceof HTMLTextAreaElement ||
             target?.isContentEditable;
 
@@ -1224,24 +1152,26 @@
             }
         }
 
-        if (event.ctrlKey && event.altKey && event.key.toLowerCase() === "t") {
+        if (event.ctrlKey && event.altKey &&
+            event.key.toLowerCase() === "t") {
             event.preventDefault();
-            createWindow("terminal");
+            launchApp("terminal");
         }
 
-        if (event.ctrlKey && event.altKey && event.key.toLowerCase() === "b") {
+        if (event.ctrlKey && event.altKey &&
+            event.key.toLowerCase() === "b") {
             event.preventDefault();
-            createWindow("browser");
+            launchApp("browser");
         }
 
-        if (!typing && event.key === "Escape") {
-            closeOverview();
+        if (!typing && event.key === " ") {
+            // Space is intentionally not bound to a desktop action.
         }
     });
 
-    // =========================================================
-    // RESTORE USER SETTINGS
-    // =========================================================
+    // ---------------------------------------------------------
+    // RESTORE SETTINGS
+    // ---------------------------------------------------------
 
     if (storage.get("light-theme", "false") === "true") {
         document.body.classList.add("light-theme");
@@ -1253,27 +1183,26 @@
 
     setBrightness(storage.get("brightness", "100"));
 
-    // =========================================================
+    // ---------------------------------------------------------
     // STARTUP
-    // =========================================================
+    // ---------------------------------------------------------
 
     function startDesktop() {
         boot?.classList.add("hidden");
         desktop.classList.remove("hidden");
 
         updateClock();
+        renderApplications();
         updateDock();
 
-        // Start with the browser open.
-        createWindow("browser");
+        launchApp("browser");
     }
 
-    // Start even if the boot element is missing.
     if (boot) {
-        setTimeout(startDesktop, 1200);
+        setTimeout(startDesktop, 1000);
     } else {
         startDesktop();
     }
 
-    console.info("GamingOS initialized successfully.");
+    console.info("GamingOS started.");
 })();
